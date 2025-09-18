@@ -1,5 +1,7 @@
-import xarray, math, datetime
+# usage: python parse.py <argo BGC+ netcdf file>
+import xarray, math, datetime, sys
 from pymongo import MongoClient
+from geopy import distance
 
 client = MongoClient('mongodb://database/argo')
 db = client.argo
@@ -60,7 +62,7 @@ def find_basin(lon, lat, basins, suppress=True):
 
 basins = xarray.open_dataset('data/basinmask_01.nc')
 
-xar = xarray.open_dataset("data/5906551_Sprof_processed.nc")
+xar = xarray.open_dataset(sys.argv[1])
 
 # construct a metadata document for this float
 meta_doc ={
@@ -72,14 +74,14 @@ meta_doc ={
     'platform': xar['PLATFORM_NUMBER'].data[0].decode().strip(),
     'platform_type': xar['PLATFORM_TYPE'].data[0].decode().strip(),
     'positioning_system': xar['POSITIONING_SYSTEM'].data[0].decode().strip(),
-    'wmo_inst_type': int(xar['WMO_INST_TYPE'].data[0]),
+    'wmo_inst_type': str(xar['WMO_INST_TYPE'].data[0].decode().strip()),
 
 }
 meta_doc['fleetmonitoring'] = 'https://fleetmonitoring.euro-argo.eu/float/' + str(meta_doc['platform'])
 meta_doc['oceanops'] = 'https://www.ocean-ops.org/board/wa/Platform?ref=' + str(meta_doc['platform'])
 
 try:
-    db.bgcMeta.replace_one({'_id': meta_doc['_id']}, meta_doc, True)
+    db.bgcargoplusMeta.replace_one({'_id': meta_doc['_id']}, meta_doc, True)
 except BaseException as err:
     print('error: data upsert failure on', meta_doc)
     print(err)
@@ -100,9 +102,12 @@ for i in range(nprof):
     data_doc['_id'] = id
     data_doc['geolocation'] = {"type": "Point", "coordinates": [float(longitude), float(latitude)]}
     data_doc['basin'] = find_basin(longitude, latitude, basins)
-    data_doc['timestamp'] = datetime.datetime.utcfromtimestamp(juld.astype('datetime64[ms]').astype(int)/1000)
+    try:
+        data_doc['timestamp'] = datetime.datetime.utcfromtimestamp(juld.astype('datetime64[ms]').astype(int)/1000)
+    except:
+        data_doc['timestamp'] = None
     data_doc['date_updated_argovis'] = datetime.datetime.now()
-    data_doc['source'] = [{'doi': 'tbd'}]
+    data_doc['source'] = [{'source': ['bgcargo+'], 'doi': 'tbd'}]
     data_doc['data_info'] = [[],['units', 'mode'],[]]
     data_doc['cycle_number'] = int(xar['CYCLE_NUMBER'].data[i])
     try:
@@ -114,22 +119,36 @@ for i in range(nprof):
         data_doc['timestamp_argoqc'] = int(xar['JULD_QC'].data[i].decode())
     except:
         data_doc['timestamp_argoqc'] = -1
-    data_doc['metadata'] = meta_doc['_id']
+    data_doc['metadata'] = [meta_doc['_id']]
 
     data_doc['data'] = []
 
     parameter = xar['PARAMETER'].data[i]
     for vix, var in enumerate(parameter[0]):
         varname = var.decode().strip() + '_ADJUSTED_RO'
+        if varname == '_ADJUSTED_RO':
+            # some blank entrues in PARAMETER, skip
+            continue
+        data = xar[varname].data[0]
         parameter_data_mode = xar['PARAMETER_DATA_MODE'].data[i][vix].decode()
         unit = xar[varname].attrs['units']
         data = xar[varname].data[0]
         data_doc['data'].append([float(x) for x in list(data)])
-        data_doc['data_info'][0].append(varname)
+        # Argovis API requires something be named exactly 'pressure'
+        name = varname
+        if name == 'PRES_ADJUSTED_RO':
+            name = 'pressure'
+        data_doc['data_info'][0].append(name)
         data_doc['data_info'][2].append([unit, parameter_data_mode])
 
+    # must have a pressure axis
+    if 'pressure' not in data_doc['data_info'][0]:
+        print('error: no pressure axis found, skipping', id)
+        print(xar['PARAMETER'].data[i])
+        continue
+
     try:
-        db.bgc.replace_one({'_id': data_doc['_id']}, data_doc, True)
+        db.bgcargoplus.replace_one({'_id': data_doc['_id']}, data_doc, True)
     except BaseException as err:
         print('error: data upsert failure on', data_doc)
         print(err)
