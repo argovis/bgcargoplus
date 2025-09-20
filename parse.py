@@ -129,7 +129,6 @@ for i in range(nprof):
         if varname == '_ADJUSTED_RO':
             # some blank entrues in PARAMETER, skip
             continue
-        data = xar[varname].data[0]
         parameter_data_mode = xar['PARAMETER_DATA_MODE'].data[i][vix].decode()
         unit = xar[varname].attrs['units']
         data = xar[varname].data[i]
