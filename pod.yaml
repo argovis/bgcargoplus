@@ -13,8 +13,8 @@ spec:
   - name: schema
     imagePullPolicy: Always
     image: argovis/bap:dev
-    command: ['sleep', '1000000']
-    #command: ['bash', 'populate.sh']
+    #command: ['sleep', '1000000']
+    command: ['bash', 'populate.sh']
     volumeMounts:
       - mountPath: "/tmp/bap"
         name: bap

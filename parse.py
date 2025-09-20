@@ -132,7 +132,7 @@ for i in range(nprof):
         data = xar[varname].data[0]
         parameter_data_mode = xar['PARAMETER_DATA_MODE'].data[i][vix].decode()
         unit = xar[varname].attrs['units']
-        data = xar[varname].data[0]
+        data = xar[varname].data[i]
         data_doc['data'].append([float(x) for x in list(data)])
         # Argovis API requires something be named exactly 'pressure'
         name = varname
